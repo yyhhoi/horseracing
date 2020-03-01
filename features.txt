@@ -1,0 +1,41 @@
+track length
+location
+going
+course
+draw
+rating
+
+actual weight
+declared weight
+origin
+wining odds
+
+
+age (post-scrapped calculation) (bucketized)
+weight difference (post-scrapped calculation)
+time since last race (post-scrapped calculation)
+first past place record on the same track (post-scrapped calculation)
+second past place record on the same track (post-scrapped calculation)
+thrid past place record on the same track (post-scrapped calculation)
+cumulative jockey wining percentage (post-scrapped calculation)
+cumulative jockey number of races (post-scrapped calculation)
+cumulative jockey elo (post-scrapped calculation)
+cumulative horse wining percentage (post-scrapped calculation)
+cumulative horse number of races (post-scrapped calculation)
+cumulative horse elo (post-scrapped calculation)
+cumulative trainer wining percentage (post-scrapped calculation)
+cumulative trainer number of races (post-scrapped calculation)
+cumulative trainer elo (post-scrapped calculation)
+
+For scrapping:
+- horse name
+- horse id
+- race date
+
+label:
+1. time
+2. place
+
+notes:
+- Crossed categorical (course_type x track_length x draw)
+- Generalized elo (http://sradack.blogspot.com/2008/06/elo-rating-system-multiple-players.html)
