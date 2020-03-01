@@ -51,7 +51,13 @@ class HTMLRecorder:
         return html_text
 
 
-def get_specifichtml_by_request(url):
+def get_specifichtml_by_request(url, selected_page='result'):
+    if selected_page == 'result':
+        selected_css_class = '.performance'
+    elif selected_page == 'horse':
+        selected_css_class = '.horseProfile'
+    else:
+        selected_css_class = '.localResults, .horseProfile'
     print('requesting url: ', url)
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
@@ -63,10 +69,10 @@ def get_specifichtml_by_request(url):
     try:
         element = wait.until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, ".horseProfile, .errorout, .simulcastContainer, .localResults")))
+                (By.CSS_SELECTOR, ".localResults, .horseProfile, .errorout, .simulcastContainer")))
 
         try:
-            driver.find_element_by_css_selector('.localResults, .horseProfile')
+            driver.find_element_by_css_selector(selected_css_class)
             driver.get(url)
             html_text = driver.page_source
             result_tag = 'valid'
@@ -87,11 +93,11 @@ def get_specifichtml_by_request(url):
 
 
 
-def get_html_by_both(html_recorder, link, counter=0, max_trial=10):
+def get_html_by_both(html_recorder, link, selected_page, counter=0, max_trial=10):
 
     html_text = html_recorder.get_stored_html(link)
     if html_text is None:
-        html_text, request_result = get_specifichtml_by_request(link)
+        html_text, request_result = get_specifichtml_by_request(link, selected_page=selected_page)
         if (html_text is not None) & (request_result == 'valid'):
             html_recorder.store_as_record(link, html_text)
             return html_text
@@ -105,7 +111,7 @@ def get_html_by_both(html_recorder, link, counter=0, max_trial=10):
             counter += 1
             time.sleep(counter * 10)
             print('Retry#%d/%d: %s '%(counter, max_trial, link))
-            return get_html_by_both(html_recorder, link, counter=counter)
+            return get_html_by_both(html_recorder, link, selected_page=selected_page, counter=counter)
     else:
         return html_text
 
@@ -125,8 +131,8 @@ def scrap_all_races(result_html, url):
 
     """
     soup = BeautifulSoup(result_html, 'html.parser')
-    found = soup.find('table', class_='js_racecard').find_all('td')  # Race selection table
-    link = found[-2].a['href']  # Get the link of the second last data (last race number) from the table
+    found = soup.find('table', class_='js_racecard').tbody.tr.find_all('a')  # Race selection table
+    link = found[-2]['href']  # Get the link of the second last data (last race number) from the table
     location = re.search('Racecourse=(.*?)&', link).group(1)
     max_race_num = int(re.search('RaceNo=(.*?$)', link).group(1))
 
@@ -232,7 +238,7 @@ def scrape_results_table(url_base, html, html_recorder):
                         horse_link = url_base + link
 
                         # Speed up by using html recorder
-                        html_text = get_html_by_both(html_recorder, horse_link, max_trial=10)
+                        html_text = get_html_by_both(html_recorder, horse_link, selected_page='horse', max_trial=10)
                         origin = scrap_horse_info(html_text)
 
                     else:

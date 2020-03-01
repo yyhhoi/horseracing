@@ -3,6 +3,8 @@ import os
 import pickle
 import datetime
 import pandas as pd
+import traceback
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -52,8 +54,7 @@ class HKJCCrawler:
                 print('Date %s existed, skipped.' % (date))
                 return None
 
-
-        result_main_html = get_html_by_both(self.html_recorder, url, max_trial=10)
+        result_main_html = get_html_by_both(self.html_recorder, url, selected_page='result', max_trial=10)
 
         all_races_links, (location, max_num_races) = scrap_all_races(result_main_html, url)
         single_scrapper = SingleResultScrapper(race_date=date, race_location=location, html_recorder=self.html_recorder)
@@ -61,7 +62,7 @@ class HKJCCrawler:
         df_list = []
         for linkid, race_link in enumerate(all_races_links):
             print('Sub-race: ', race_link)
-            results_html = get_html_by_both(self.html_recorder, race_link, max_trial=10)
+            results_html = get_html_by_both(self.html_recorder, race_link, selected_page='result', max_trial=10)
             df = single_scrapper.scrape_and_formDF(results_html, linkid+1)
             df_list.append(df)
         df_all = pd.concat(df_list, axis=0)
@@ -78,13 +79,15 @@ if __name__ == '__main__':
     log_path = "data/request_log.txt"
     invalid_dates_path = 'data/invalid_dates.txt'
     date_list = generate_date_list(datetime.date.today(), datetime.date(2000, 1, 1))
+
     # local_race_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2019/12/29'
     # foreign_race_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2020/02/20'
     # non_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2020/02/24'
     # horse_url = 'https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseId=HK_2018_C413'
-    # selected_url = foreign_race_url
-
-
+    # bug1_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2019/11/13'
+    # selected_url = bug1_url
+    # html = get_specifichtml_by_request(url=selected_url, selected_page='result')
+    # print(html)
 
     crawler = HKJCCrawler(rawhtml_dir='data/intermediate_storage/stage1_raw_htmls',
                           raw_racedf_dir='data/intermediate_storage/stage2_single_race_dataframes',
@@ -114,3 +117,11 @@ if __name__ == '__main__':
             with open(invalid_dates_path, 'a') as fh:
                 fh.write(date + '\n')
             print('Invalid link')
+
+        except Exception:
+
+            msg = 'Unknown exception: %s' % selected_url
+            with open(log_path, 'a') as fh:
+                fh.write(msg + '\n')
+                traceback.print_exc(file=fh)
+                fh.write('\n')
