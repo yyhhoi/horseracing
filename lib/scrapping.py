@@ -4,6 +4,8 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
+import pandas as pd
+import numpy as np
 import re
 import os
 import pickle
@@ -74,8 +76,21 @@ class SingleResultScrapper:
         table_dict['race_date'] = [self.race_date] * num_races
         table_dict['location'] = [self.race_location] * num_races
 
+        # Fill columns that are not found
+        for key in table_dict.keys():
+            if len(table_dict[key]) == 0:
+                table_dict[key]  = [np.nan] * num_races
+
         # Convert to appropriate datatype
         df = pd.DataFrame(table_dict)
+        # try:
+        #     df = pd.DataFrame(table_dict)
+        # except ValueError:
+        #     print("".join(["%s : %d\n" % ( key, len(table_dict[key])) for key in table_dict.keys()]))
+        #     import pprint
+        #     foopp = pprint.PrettyPrinter(indent=4)
+        #     import pdb
+        #     pdb.set_trace()
         return df
 
 
@@ -102,7 +117,7 @@ def get_specifichtml_by_request(url, selected_page='result'):
     try:
         element = wait.until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, ".localResults, .horseProfile, .errorout, .simulcastContainer")))
+                (By.CSS_SELECTOR, ".localResults, .horseProfile, .errorout, .simulcastContainer, #main-content")))
 
         try:
             driver.find_element_by_css_selector(selected_css_class)
@@ -113,7 +128,7 @@ def get_specifichtml_by_request(url, selected_page='result'):
 
         except NoSuchElementException:
             try:
-                driver.find_element_by_css_selector('.simulcastContainer, .errorout')
+                driver.find_element_by_css_selector('.simulcastContainer, .errorout, #main-content')
                 result_tag = 'invalid'
                 return html_text, result_tag
             except NoSuchElementException:
@@ -227,7 +242,6 @@ def scrape_results_table(url_base, html, html_recorder):
     soup = BeautifulSoup(html, 'html.parser')
 
     # Information of horses
-    all_trs = soup.find('div', class_='performance').find('table').find_all('tr')
     data_dict = {
         'place': [],
         'horse_no': [],
@@ -244,15 +258,32 @@ def scrape_results_table(url_base, html, html_recorder):
         'time': [],
         'odds': []
     }
-    col_titles = ['place', 'horse_no', 'horse', 'jockey_name', 'trainer_name', 'act_weight', 'decla_weight', 'draw', 'lbw',
-                  'running_pos', 'time', 'odds']
+    conversion_dict = {
+        'Plc.': 'place',
+        'Horse No.': 'horse_no',
+        'Horse': 'horse',
+        'Jockey': 'jockey_name',
+        'Trainer': 'trainer_name',
+        'Actual Wt.': 'act_weight',
+        'Declar. Horse Wt.': 'decla_weight',
+        'Draw': 'draw',
+        'LBW': 'lbw',
+        'RunningPosition': 'running_pos',
+        'Finish Time': 'time',
+        'Win Odds': 'odds'
+    }
+
+    all_trs = soup.find('div', class_='performance').find('table').find_all('tr')
 
     for tr_idx, tr in enumerate(all_trs):
-        if tr_idx > 0:
+        if tr_idx == 0:
+            all_tds_0 = tr.find_all('td')
+            html_cols = ["".join(x.strings).strip() for x in all_tds_0]
+        else:
             all_tds = tr.find_all('td')
             for td_idx, td in enumerate(all_tds):
 
-                data_title = col_titles[td_idx]  # Column title
+                data_title = conversion_dict[html_cols[td_idx]]  # Column title
                 # Running Position is not needed
                 if data_title == "running_pos":
                     continue

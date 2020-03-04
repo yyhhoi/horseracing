@@ -77,7 +77,9 @@ if __name__ == '__main__':
     url_base = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate='
     log_path = "data/request_log.txt"
     invalid_dates_path = 'data/invalid_dates.txt'
-    date_list = generate_date_list(datetime.date.today(), datetime.date(2000, 1, 1))
+    start_date = datetime.date.today()
+    # start_date = datetime.date(2010, 6, 1)
+    date_list = generate_date_list(start_date, datetime.date(2000, 1, 1))
 
 
     # # Testing url
