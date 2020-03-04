@@ -50,6 +50,39 @@ class HTMLRecorder:
 
         return html_text
 
+class SingleResultScrapper:
+    def __init__(self, race_date, race_location, html_recorder, url_base='https://racing.hkjc.com'):
+        self.race_date = race_date
+        self.race_location = race_location
+        self.url_base = url_base
+        self.html_recorder = html_recorder
+
+
+    def scrape_and_formDF(self, result_html, race_place):
+
+        # Scrap
+        race_num, track_length, going, course = scrape_race_meta(result_html)
+        table_dict = self._scrape_results_table(result_html)
+
+        # Append
+        num_races = len(table_dict['place'])
+        table_dict['race_no'] = [race_place] * num_races
+        table_dict['race_num'] = [race_num] * num_races
+        table_dict['track_length'] = [track_length] * num_races
+        table_dict['going'] = [going] * num_races
+        table_dict['course'] = [course] * num_races
+        table_dict['race_date'] = [self.race_date] * num_races
+        table_dict['location'] = [self.race_location] * num_races
+
+        # Convert to appropriate datatype
+        df = pd.DataFrame(table_dict)
+        return df
+
+
+    def _scrape_results_table(self, html):
+        table_dict = scrape_results_table(self.url_base, html, self.html_recorder)
+        return table_dict
+
 
 def get_specifichtml_by_request(url, selected_page='result'):
     if selected_page == 'result':

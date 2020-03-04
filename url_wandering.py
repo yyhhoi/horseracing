@@ -12,9 +12,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
-from lib.scrapping import get_specifichtml_by_request, scrap_all_races, get_date_from_url, HTMLRecorder, get_html_by_both
+from lib.scrapping import get_specifichtml_by_request, scrap_all_races, get_date_from_url, HTMLRecorder, get_html_by_both, SingleResultScrapper
 from lib.utils import generate_date_list
-from get_tablerows import SingleResultScrapper
 
 # Consider 3 scenarios: (1) local race, (2) foreign race, (3) non-existing
 
@@ -80,6 +79,8 @@ if __name__ == '__main__':
     invalid_dates_path = 'data/invalid_dates.txt'
     date_list = generate_date_list(datetime.date.today(), datetime.date(2000, 1, 1))
 
+
+    # # Testing url
     # local_race_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2019/12/29'
     # foreign_race_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2020/02/20'
     # non_url = 'https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2020/02/24'

@@ -11,12 +11,10 @@ origin
 wining odds
 
 
-age (post-scrapped calculation) (bucketized)
+age (post-scrapped calculation)
 weight difference (post-scrapped calculation)
 time since last race (post-scrapped calculation)
-first past place record on the same track (post-scrapped calculation)
-second past place record on the same track (post-scrapped calculation)
-thrid past place record on the same track (post-scrapped calculation)
+
 cumulative jockey wining percentage (post-scrapped calculation)
 cumulative jockey number of races (post-scrapped calculation)
 cumulative jockey elo (post-scrapped calculation)
@@ -26,6 +24,12 @@ cumulative horse elo (post-scrapped calculation)
 cumulative trainer wining percentage (post-scrapped calculation)
 cumulative trainer number of races (post-scrapped calculation)
 cumulative trainer elo (post-scrapped calculation)
+
+first past place record on the same track (post-scrapped calculation)
+second past place record on the same track (post-scrapped calculation)
+thrid past place record on the same track (post-scrapped calculation)
+
+
 
 For scrapping:
 - horse name
