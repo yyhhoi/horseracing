@@ -1,7 +1,9 @@
 import datetime
 import numpy as np
+
+
 def generate_date_list(newday, oldday):
-    diff = newday-oldday
+    diff = newday - oldday
     date_list = []
     for i in range(diff.days):
         subtractor = datetime.timedelta(days=i + 1)
@@ -23,3 +25,16 @@ def calc_aver(arr):
     unqa, ID, counts = np.unique(arr[:, 0], return_inverse=True, return_counts=True)
     out = np.column_stack((unqa, np.bincount(ID, arr[:, 1]) / counts))
     return out
+
+
+class OneHotTransformer:
+    def __init__(self, max_num):
+        self.arr_temp = np.zeros(max_num)
+
+    def transform(self, label):
+        out = self.arr_temp.copy()
+        out[label] = 1
+        return out
+
+def find_missing(lst, max_n):
+    return sorted(set(range(0, max_n)) - set(lst))

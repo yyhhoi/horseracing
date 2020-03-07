@@ -79,7 +79,7 @@ if __name__ == '__main__':
     invalid_dates_path = 'data/invalid_dates.txt'
     start_date = datetime.date.today()
     # start_date = datetime.date(2010, 6, 1)
-    date_list = generate_date_list(start_date, datetime.date(2000, 1, 1))
+    date_list = generate_date_list(start_date, datetime.date(1997, 2, 12))
 
 
     # # Testing url
