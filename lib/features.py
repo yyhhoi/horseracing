@@ -104,11 +104,11 @@ class EloEstimator:
         record_path = os.path.join(self.records_dir, 'elo_params_records.txt')
         if os.path.isfile(record_path):
             with open(os.path.join(self.records_dir, 'elo_params_records.txt'), 'a') as fh:
-                fh.write('%s, %0.5f, %0.5f, %0.2f\n' % (key, self.K, self.D, pred_winrate))
+                fh.write('%s, %0.5f, %0.5f, %0.5f\n' % (key, self.K, self.D, pred_winrate))
         else:
             with open(os.path.join(self.records_dir, 'elo_params_records.txt'), 'a') as fh:
                 fh.write('key, K, D, winrate\n')
-                fh.write('%s, %0.5f, %0.5f, %0.2f\n' % (key, self.K, self.D, pred_winrate))
+                fh.write('%s, %0.5f, %0.5f, %0.5f\n' % (key, self.K, self.D, pred_winrate))
 
     @staticmethod
     def _calc_elo_rate(key, df, K, D):
@@ -281,7 +281,7 @@ class DataGenerator:
             self.df = pickle.load(fh)
         self.m = m
         self.df_train, self.df_test = self._sep_train_test()  # Default: 2018-2020 for test
-        self.max_nhorses = 15
+        self.max_nhorses = 14
 
     def iterator(self):
         train_groups = [x for _, x in self.df_train.groupby(['race_date', 'race_num'])]
@@ -321,11 +321,15 @@ class DataGenerator:
             y_list.append(y_each)
         x_np = np.stack(x_list)  # (m, nhorses, 78)
         y_np = np.stack(y_list)  # (m, nhorses, 4)
-        y_odds, y_palce, y_time, y_mask = y_np[:, :, 0], y_np[:, :, 1], y_np[:, :, 2], y_np[:, :, 3]
-        return x_np, (y_odds, y_palce, y_time, y_mask)
+        y_odds, y_place, y_time, y_mask = y_np[:, :, 0], y_np[:, :, 1], y_np[:, :, 2], y_np[:, :, 3]
+        return x_np, (y_odds, y_place, y_time, y_mask)
 
 
-def get_cul_stats(key, raw_df):
+def time2sec(time_obj):
+    sec = (time_obj.hour * 60 + time_obj.minute) * 60 + time_obj.second + time_obj.microsecond * 1e-6
+    return sec
+
+def calc_cul_winrates(key, raw_df):
     name_key = '%s_code' % key if key == 'horse' else '%s_name' % key
     cul_wintimes_key = '%s_cul_wintimes' % key
     cul_racetimes_key = '%s_cul_racetimes' % key
@@ -364,9 +368,52 @@ def get_cul_stats(key, raw_df):
     return raw_df
 
 
-def time2sec(time_obj):
-    sec = (time_obj.hour * 60 + time_obj.minute) * 60 + time_obj.second + time_obj.microsecond * 1e-6
-    return sec
+def calc_cul_time_diff(raw_df):
+    # Update age, weight difference
+    raw_df['age'] = np.nan
+    raw_df['time_since_last'] = np.nan
+    raw_df['weight_diff'] = np.nan
+
+    all_uni_horses = raw_df.horse_code.unique()
+    for i, uni_horse in enumerate(all_uni_horses):
+        print('\rCalculate age, time_since_last and weight_diff %d/%d' % (i, len(all_uni_horses)), flush=True, end="")
+        horse_df = raw_df[raw_df['horse_code'] == uni_horse]
+        horse_dates = horse_df["race_date"]
+        horse_indexes = horse_dates.index
+        mindate = min(horse_dates)
+        ages_series = (horse_dates.reset_index(drop=True) - mindate).apply(lambda x: x.days / 365.25)
+        raw_df.loc[horse_indexes, 'age'] = list(ages_series)
+
+        horse_df_sorted = horse_df.sort_values('race_date', ascending=False)
+        sorted_indexes = horse_df_sorted.index
+
+        # Time since last race
+        horse_dates_sorted = horse_df_sorted['race_date']
+        dates_plus = horse_dates_sorted[0:-1].reset_index(drop=True)
+        dates_minus = horse_dates_sorted[1:].reset_index(drop=True)
+        datesdiff = (dates_plus.reset_index(drop=True) - dates_minus.reset_index(drop=True)).apply(lambda x: x.days)
+        complete_datesdiff = list(datesdiff) + [np.nan]
+        raw_df.loc[sorted_indexes, 'time_since_last'] = complete_datesdiff
+
+        # Weight difference
+        horse_weights_sorted = horse_df_sorted['act_weight']
+        weights_plus = horse_weights_sorted[0:-1]
+        weights_minus = horse_weights_sorted[1:]
+        weightsdiff = (weights_plus.reset_index(drop=True) - weights_minus.reset_index(drop=True))
+        complete_weightsdiff = list(weightsdiff) + [np.nan]
+        raw_df.loc[sorted_indexes, 'weight_diff'] = complete_weightsdiff
+
+    print()
+
+    # Mean imputation
+    mean_time_since_last = np.nanmean(raw_df['time_since_last'])
+    raw_df.loc[raw_df['time_since_last'].isna(), 'time_since_last'] = mean_time_since_last
+    mean_weight_diff = np.nanmean(raw_df['weight_diff'])
+    raw_df.loc[raw_df['weight_diff'].isna(), 'weight_diff'] = mean_weight_diff
+
+    return raw_df
+
+
 
 
 columns_order = [

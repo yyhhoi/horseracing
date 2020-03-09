@@ -1,0 +1,13 @@
+
+Step 1: Scrape races and store each race date as a dataframe
+    python Scrape_HKJC.py
+
+Step 2: Combine all the scraped race dates into one overall dataframe
+    python Combine_Dataframes.py
+
+Step 3: ELO rating hyper-paramters optimization (Done only once)
+    python Feature_Extraction (call FeatureExtractor.elo_hyperparams_optimization())
+
+Step 4: Data pre-processing & Feature extraction
+    python Feature_Extraction (call FeatureExtractor.process())
+

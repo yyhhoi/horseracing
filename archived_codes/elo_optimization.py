@@ -8,7 +8,7 @@ from lib.features import EloRating, calc_aver, EloEstimator,time2sec
 
 
 if __name__ == "__main__":
-    df_path = 'data/raw_df.csv'
+    df_path = 'data/intermediate_storage/raw_df.csv'
     raw_df = pd.read_csv(df_path, index_col=0)
     raw_df.pop('horse_link')
     raw_df.pop('lbw')

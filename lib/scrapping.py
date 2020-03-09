@@ -11,8 +11,10 @@ import os
 import pickle
 import time
 
+
 class HTMLRecorder:
-    def __init__(self, results_dir='data/intermediate_storage/stage1_raw_htmls', html_records_path='data/intermediate_storage/html_records.pickle'):
+    def __init__(self, results_dir='data/intermediate_storage/stage1_raw_htmls',
+                 html_records_path='data/intermediate_storage/html_records.pickle'):
         self.results_dir = results_dir
         self.html_records_path = html_records_path
         self.html_records = self._load_html_records()
@@ -52,13 +54,13 @@ class HTMLRecorder:
 
         return html_text
 
+
 class SingleResultScrapper:
     def __init__(self, race_date, race_location, html_recorder, url_base='https://racing.hkjc.com'):
         self.race_date = race_date
         self.race_location = race_location
         self.url_base = url_base
         self.html_recorder = html_recorder
-
 
     def scrape_and_formDF(self, result_html, race_place):
 
@@ -79,33 +81,100 @@ class SingleResultScrapper:
         # Fill columns that are not found
         for key in table_dict.keys():
             if len(table_dict[key]) == 0:
-                table_dict[key]  = [np.nan] * num_races
+                table_dict[key] = [np.nan] * num_races
 
         # Convert to appropriate datatype
         df = pd.DataFrame(table_dict)
-        # try:
-        #     df = pd.DataFrame(table_dict)
-        # except ValueError:
-        #     print("".join(["%s : %d\n" % ( key, len(table_dict[key])) for key in table_dict.keys()]))
-        #     import pprint
-        #     foopp = pprint.PrettyPrinter(indent=4)
-        #     import pdb
-        #     pdb.set_trace()
         return df
-
 
     def _scrape_results_table(self, html):
         table_dict = scrape_results_table(self.url_base, html, self.html_recorder)
         return table_dict
 
 
+class HKJCCrawler:
+    """
+    Scrape all the races within one race date. Every url query will store the fetched HTML source, such that in the next
+    encounter of the same url, the HTML source is not needed to download again.
+
+    Example use:
+        crawler = HKJCCrawler(rawhtml_dir, raw_racedf_dir, html_records_path)
+        crawler.scrape("https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2019/12/29")
+
+    """
+
+    def __init__(self, rawhtml_dir='data/intermediate_storage/stage1_raw_htmls',
+                 raw_racedf_dir='data/intermediate_storage/stage2_single_race_dataframes',
+                 html_records_path='data/intermediate_storage/html_records.pickle'):
+        """
+
+        Args:
+            rawhtml_dir (str): Directory that stores html source code every time after query.
+
+            raw_racedf_dir (str): Directory that stores output dataframes. Each of them contains all horse and race
+            information within a race date after scrapping.
+
+            html_records_path (str): Path for the dictionary object which store the links between url and the
+            corresponding downloaded HTML source.
+
+        """
+
+        self.rawhtml_dir = rawhtml_dir
+        self.raw_racedf_dir = raw_racedf_dir
+        self.html_recorder = HTMLRecorder(results_dir=rawhtml_dir, html_records_path=html_records_path)
+
+    def scrape(self, url, skip_existed=True):
+        """
+        Scrape all race information within the url, which contains all races of a race date.
+        Args: url (str): Url ending with the race date. E.g.
+        https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=2019/12/29
+
+        Returns:
+
+        """
+        print('Main date: ', url)
+        date = get_date_from_url(url)
+        save_path = os.path.join(self.raw_racedf_dir, '%s.csv' % (date.replace('/', '-')))
+        if skip_existed:
+            if os.path.isfile(save_path):
+                print('Date %s existed, skipped.' % (date))
+                return None
+
+        result_main_html = get_html_by_both(self.html_recorder, url, selected_page='result', max_trial=10)
+
+        all_races_links, (location, max_num_races) = scrap_all_races(result_main_html, url)
+        single_scrapper = SingleResultScrapper(race_date=date, race_location=location, html_recorder=self.html_recorder)
+
+        df_list = []
+        for linkid, race_link in enumerate(all_races_links):
+            print('Sub-race: ', race_link)
+            results_html = get_html_by_both(self.html_recorder, race_link, selected_page='result', max_trial=10)
+            df = single_scrapper.scrape_and_formDF(results_html, linkid + 1)
+            df_list.append(df)
+        df_all = pd.concat(df_list, axis=0)
+        df_all.to_csv(save_path)
+
+
 def get_specifichtml_by_request(url, selected_page='result'):
+    """
+    Query for the HTML source based on the input url and the wanted type (result page or horse page).
+
+    Args:
+        url (str): Target url to query the source HTML.
+        selected_page (str): 'result' or 'horse'
+
+    Returns:
+        html_text (str or None): If query is successful/valid, return the HTML source. Otherwise, None.
+        result_tag (str): 'valid' if the url matches the arg:selected_page, 'invalid' if not. 'timeout' if failed after
+        re-querying the url for too many times.
+    """
     if selected_page == 'result':
-        selected_css_class = '.performance'
+        selected_css_class = '.performance'  # '.performance' is necessary for identifying race performance result page
     elif selected_page == 'horse':
-        selected_css_class = '.horseProfile'
+        selected_css_class = '.horseProfile'  # '.horseProfile' is necessary for identifying horse profile page
     else:
-        selected_css_class = '.localResults, .horseProfile'
+        selected_css_class = '.performance, .horseProfile'  # If not specify, then either one of both.
+
     print('requesting url: ', url)
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
@@ -115,19 +184,25 @@ def get_specifichtml_by_request(url, selected_page='result'):
     html_text = None
     result_tag = ''  # 'valid', 'invalid', 'timeout'
     try:
+        # First we screen for all possible known page types.
+        # ".localResults" does not guarantee having race results, but ".performance" does.
         element = wait.until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, ".localResults, .horseProfile, .errorout, .simulcastContainer, #main-content")))
+                (By.CSS_SELECTOR, ".performance, .localResults, .horseProfile, .errorout, .simulcastContainer, #main-content")))
 
         try:
+            # .performance or .horseProbile are our main targets
             driver.find_element_by_css_selector(selected_css_class)
             driver.get(url)
             html_text = driver.page_source
             result_tag = 'valid'
             return html_text, result_tag
 
-        except NoSuchElementException:
+        except NoSuchElementException:  # If our target is not found.
             try:
+                # Known invalid page types.
+                # ".simulcastContainer" is foreign race page, which we don't want.
+                # ".errorout" or "#main-content"  are error pages with no race result at all.
                 driver.find_element_by_css_selector('.simulcastContainer, .errorout, #main-content')
                 result_tag = 'invalid'
                 return html_text, result_tag
@@ -135,34 +210,46 @@ def get_specifichtml_by_request(url, selected_page='result'):
                 result_tag = 'invalid'
                 return html_text, result_tag
 
-    except TimeoutException:
+    except TimeoutException:  # If waiting for too long.
         result_tag = 'timeout'
         return html_text, result_tag
 
 
+def get_html_by_both(html_recorder, url, selected_page, _counter=0, max_trial=10):
+    """
+    Check if the asked url was already recorded in html_recorder. If yes, get the HTML source from the html_recorder.
+    If no, request the HTML source from the url's server. Raise "NoSuchElementException" if the url page is not the
+    target type (arg:selected_page). Raise "TimeoutException" if unsuccessful request is made too many times.
 
-def get_html_by_both(html_recorder, link, selected_page, counter=0, max_trial=10):
+    Args:
+        html_recorder (HTMLRecorder object): HTML recorder that record downloaded HTML sources.
+        url (str): URL link whose HTML source is wanted.
+        selected_page (str): Target page type. Can be 'result' or 'horse'.
+        _counter (int): Internal recursive counter.
+        max_trial (int): Maximum number of unsuccessful request before TimeoutException is raised.
 
-    html_text = html_recorder.get_stored_html(link)
+    Returns:
+
+    """
+    html_text = html_recorder.get_stored_html(url)
     if html_text is None:
-        html_text, request_result = get_specifichtml_by_request(link, selected_page=selected_page)
+        html_text, request_result = get_specifichtml_by_request(url, selected_page=selected_page)
         if (html_text is not None) & (request_result == 'valid'):
-            html_recorder.store_as_record(link, html_text)
+            html_recorder.store_as_record(url, html_text)
             return html_text
         elif request_result == 'invalid':
             print('Invalid request')
             raise NoSuchElementException
         else:
 
-            if counter > max_trial:
+            if _counter > max_trial:
                 raise TimeoutException
-            counter += 1
-            time.sleep(counter * 10)
-            print('Retry#%d/%d: %s '%(counter, max_trial, link))
-            return get_html_by_both(html_recorder, link, selected_page=selected_page, counter=counter)
+            _counter += 1
+            time.sleep(_counter * 10)
+            print('Retry#%d/%d: %s ' % (_counter, max_trial, url))
+            return get_html_by_both(html_recorder, url, selected_page=selected_page, _counter=counter)
     else:
         return html_text
-
 
 
 def scrap_all_races(result_html, url):
@@ -194,7 +281,7 @@ def scrap_all_races(result_html, url):
 
 def scrap_horse_info(horse_html):
     """
-
+    Get origin information from the HTML source of a horse
     Args:
         horse_html (str): HTML source of a horse's website
     Returns:
@@ -235,10 +322,23 @@ def scrape_race_meta(html):
     going = "".join(page_tds1[2].strings)
     course = "".join(page_tds2[2].strings)
 
-
     return race_num, track_length, going, course
 
+
 def scrape_results_table(url_base, html, html_recorder):
+    """
+    Scrape horse and race information from the performance table of the HTML page of race result.
+
+    Args:
+        url_base (str): Expected to be "https://racing.hkjc.com". Normally no need to change.
+        html (str): HTML source text of the result page
+        html_recorder (HTMLRecorder object): html recorder to store downloaded source/ retrieve downloaded source.
+
+    Returns:
+
+    """
+
+
     soup = BeautifulSoup(html, 'html.parser')
 
     # Information of horses

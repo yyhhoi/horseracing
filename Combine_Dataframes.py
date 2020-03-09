@@ -1,5 +1,4 @@
 import pandas as pd
-import pickle
 import os
 from glob import glob
 
@@ -12,4 +11,4 @@ df_list = [pd.read_csv(x, index_col=0) for x in all_dfs]
 
 df_all = pd.concat(df_list, axis=0).reset_index(drop=True)
 
-df_all.to_csv('data/raw_df.csv')
+df_all.to_csv('data/intermediate_storage/stage3_features_engineering/raw_df.csv')

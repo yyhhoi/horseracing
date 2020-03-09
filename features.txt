@@ -38,7 +38,6 @@ Not yet used:
     first past place record on the same track (post-scrapped calculation)
     second past place record on the same track (post-scrapped calculation)
     thrid past place record on the same track (post-scrapped calculation)
-    Tuned K,D of ELO
 
 
 notes:

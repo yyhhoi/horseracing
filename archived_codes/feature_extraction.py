@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
-from lib.features import time2sec, get_cul_stats, EloEstimator, DataEncoder, columns_order, feature_cols, target_cols, linear_cols, cat_cols, metainfo_cols
+from lib.features import time2sec, calc_cul_winrates, EloEstimator, DataEncoder, columns_order, feature_cols, target_cols, linear_cols, cat_cols, metainfo_cols, DataGenerator
 from lib.utils import find_missing
 import pickle
 import os
 import random
 
+
+# ------------------------------------------------------------------------------------------------------------------
 # Index(['place', 'horse_link' (deleted) , 'horse_no' (deleted), 'horse_code', 'horse_name', 'horse_origin',
 #        'jockey_name', 'trainer_name', 'act_weight', 'decla_weight', 'draw',
 #        'lbw' (deleted), 'time', 'odds', 'race_no' (deleted), 'race_num', 'track_length', 'going',
@@ -13,7 +15,7 @@ import random
 
 
 # Load, pop, cleaning and convert dtype
-df_path = 'data/raw_df.csv'
+df_path = 'data/intermediate_storage/raw_df.csv'
 raw_df = pd.read_csv(df_path, index_col=0)
 raw_df.pop('horse_link')
 raw_df.pop('lbw')
@@ -95,7 +97,7 @@ raw_df.loc[raw_df['weight_diff'].isna(), 'weight_diff'] = mean_weight_diff
 
 # Cumulative wining times, wining rates and race times
 for key in ['horse', 'jockey', 'trainer']:
-    raw_df = get_cul_stats(key, raw_df)
+    raw_df = calc_cul_winrates(key, raw_df)
 
 # Intermediate storage
 save_dir = 'data/intermediate_storage/stage3_features_engineering'
