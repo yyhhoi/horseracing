@@ -6,7 +6,6 @@ import random
 from lib.utils import calc_aver, OneHotTransformer, find_missing
 
 
-
 class EloRating:
     def __init__(self, k, d):
         self.k = k
@@ -113,7 +112,7 @@ class EloEstimator:
     @staticmethod
     def _calc_elo_rate(key, df, K, D):
         """
-        Example:
+        Example
         ratingdf_dict = {}
         for key in ['horse', 'jockey', 'trainer']:
             raw_df, ratingdf_dict = elo_rate(key, raw_df, ratingdf_dict, elo_k=10, elo_d=400)
@@ -150,9 +149,7 @@ class EloEstimator:
             for uni_race in uni_races:
                 print('\r%s Date: %s %d/%d' % (key, str(uni_date), date_idx, len(all_uni_dates)), end='',
                       flush=True)
-                game_df = df[
-                    (df['race_date'] == uni_date) & (df['race_num'] == uni_race) & (df['place'] != 20)][
-                    ['place', name_key]]
+                game_df = df[(df['race_date'] == uni_date) & (df['race_num'] == uni_race)][['place', name_key]]
 
                 # Get ratings from storage. Note: right_index=True preserve the index of LEFT table!
                 joined_df = pd.merge(game_df, rating_df, on=name_key, right_index=True)
@@ -186,20 +183,24 @@ class DataEncoder:
         self.cat_dict = dict()
         self.linear_dict = dict()
         self.cat_columns = ["horse_origin", "track_length", "going", "course", "location"]
-        self.linear_columns = ['act_weight', 'decla_weight', 'time', 'odds',
+        self.linear_columns = ['act_weight', 'decla_weight', 'time',
                                'age', 'time_since_last', 'weight_diff', 'horse_cul_wintimes',
                                'horse_cul_racetimes', 'horse_cul_winrate', 'jockey_cul_wintimes',
                                'jockey_cul_racetimes', 'jockey_cul_winrate', 'trainer_cul_wintimes',
                                'trainer_cul_racetimes', 'trainer_cul_winrate', 'horse_rating',
                                'jockey_rating', 'trainer_rating']
 
-    def create_category_tables(self):
-
+    def create_category_tables(self, save=True):
+        cat_dict = dict()
         for cat_col in self.cat_columns:
-            save_path = os.path.join(self.records_dir, '%s_cattable.csv' % cat_col)
             uni_cat = np.sort(self.df[cat_col].unique())
             cattable = pd.DataFrame({cat_col: uni_cat, 'label': np.arange(uni_cat.shape[0]).astype(int)})
-            cattable.to_csv(save_path)
+            if save:
+                save_path = os.path.join(self.records_dir, '%s_cattable.csv' % cat_col)
+                cattable.to_csv(save_path)
+            cat_dict[cat_col] = {cattable.loc[i, cat_col]: cattable.loc[i, 'label'] for i in
+                                 range(cattable.shape[0])}
+        return cat_dict
 
     def load_category_tables(self):
 
@@ -211,17 +212,27 @@ class DataEncoder:
 
         return self.cat_dict
 
-    def create_linear_scale_params(self):
-        save_path = os.path.join(self.records_dir, 'linear_scale_params.csv')
+    def verify_loaded_category_tables(self):
+        cat_dict_new = self.create_category_tables(save=False)
+        self._compare_two_dict(cat_dict_new, self.cat_dict, 'category table')
+
+    def create_linear_scale_params(self, save=True):
+
         x_max_list, x_min_list, x_key_list = [], [], []
         for linear_col_key in self.linear_columns:
             x_max, x_min = self.df[linear_col_key].max(), self.df[linear_col_key].min()
-            x_max_list.append(x_max)
-            x_min_list.append(x_min)
+            x_max_list.append(round(x_max, 8))
+            x_min_list.append(round(x_min, 8))
             x_key_list.append(linear_col_key)
         lsp_df = pd.DataFrame({'col': x_key_list, 'x_max': x_max_list, 'x_min': x_min_list})
-        lsp_df.to_csv(save_path)
-        return lsp_df
+        if save:
+            save_path = os.path.join(self.records_dir, 'linear_scale_params.csv')
+            lsp_df.to_csv(save_path)
+        linear_dict = {
+            lsp_df.loc[i, 'col']: (lsp_df.loc[i, 'x_max'], lsp_df.loc[i, 'x_min']) for i in
+            range(lsp_df.shape[0])
+        }
+        return linear_dict
 
     def load_linear_scale_params(self):
         load_path = os.path.join(self.records_dir, 'linear_scale_params.csv')
@@ -232,6 +243,31 @@ class DataEncoder:
         }
 
         return self.linear_dict
+
+    def verify_loaded_linear_params(self):
+        linear_dict_new = self.create_linear_scale_params(save=False)
+        self._compare_two_dict(linear_dict_new, self.linear_dict, 'linear params table')
+
+    @staticmethod
+    def _compare_two_dict(dict_data, dict_loaded, dict_name):
+        # Check keys are the same
+        sorted_keys_new = sorted(dict_data.keys())
+        sorted_loaded_keys = sorted(dict_loaded.keys())
+        try:
+            assert sorted_keys_new == sorted_loaded_keys
+        except AssertionError:
+            raise AssertionError(
+                "Stored %s has different set of columns with your data!\nloaded = %s\ndata\nfor key %s" % (
+                dict_name, sorted_loaded_keys, sorted_keys_new))
+        # Check key's elements are the same
+        for col_key in sorted_loaded_keys:
+            try:
+                assert dict_data[col_key] == dict_loaded[col_key]
+            except AssertionError:
+                raise AssertionError("Stored %s has a different label\nloaded: %s\nnew: %s\n for key %s" % (
+                    dict_name, str(dict_loaded[col_key]), str(dict_data[col_key]), col_key
+                ))
+        print('Verification for %s is successful. The stored parameters match the data' % dict_name)
 
     def transform2encodings(self, vec=True):
         out_df = self.df.copy()
@@ -275,59 +311,57 @@ class DataEncoder:
     def unscale_range(scaled_x, max_x, min_x):
         return (scaled_x * (max_x - min_x)) + min_x
 
-class DataGenerator:
-    def __init__(self, df_path, m=512):
-        with open(df_path, 'rb') as fh:
-            self.df = pickle.load(fh)
-        self.m = m
-        self.df_train, self.df_test = self._sep_train_test()  # Default: 2018-2020 for test
-        self.max_nhorses = 14
 
-    def iterator(self):
-        train_groups = [x for _, x in self.df_train.groupby(['race_date', 'race_num'])]
-        test_groups = [x for _, x in self.df_test.groupby(['race_date', 'race_num'])]
+class RecordSequenceConstructor:
+    def __init__(self, past_k, ndraw=15, nplace=14):
+        self.past_k = past_k
+        self.ndraw = ndraw
+        self.nplace = nplace
 
-        while True:
-            random.shuffle(train_groups)
-            random.shuffle(test_groups)
-            x_train, y_train = self._stack_groups(train_groups)
-            x_test, y_test = self._stack_groups(test_groups)
-            yield (x_train, y_train), (x_test, y_test)
+    def build_records(self, df):
+        print('Building past %d records as features of sequence' % self.past_k)
+        draw_onehotter = OneHotTransformer(max_num=self.ndraw)
+        place_onehotter = OneHotTransformer(max_num=self.nplace)
 
+        # Convert draw and place to one-hots, and append to features
+        # The idea is past histories contain place, which is an important information
+        df['draw_vec'] = df['draw'].astype(int).apply(draw_onehotter.transform)
+        df['place_vec'] = df['place'].astype(int).apply(place_onehotter.transform)
+        df['features_complete'] = df[['features', 'draw_vec', 'place_vec']].apply(np.concatenate, axis=1)
+        df.pop('draw_vec')
+        df.pop('place_vec')
+        seq_features = df.loc[0, 'features_complete'].shape[0]
 
+        # Initialize record vectors
+        df['past_records'] = list(np.zeros((df.shape[0], self.past_k, seq_features)))
+        num_uni_horses = df.horse_code.unique().shape[0]
 
-    def _sep_train_test(self):
+        # Append records. Race with number of past records < k will be padded as zeros
+        for gpid, (name, group) in enumerate(df.groupby('horse_code')):
+            print('\r%d/%d' % (gpid, num_uni_horses), end="", flush=True)
+            group_sorted = group.sort_values('race_date', ascending=False).reset_index()
+            num_rows = group_sorted.shape[0]
 
-        df_train = self.df[self.df['race_date'] < pd.Timestamp(2018, 1, 1)]
-        df_test = self.df[self.df['race_date'] >= pd.Timestamp(2018, 1, 1)]
-        return df_train, df_test
+            for df_idx in range(num_rows - 1):  # We don't loop the last one, since it has no record
+                start_idx = df_idx + 1  # +1 because the record shouldn't include the present one
+                remain = num_rows - df_idx - 1
+                if remain >= self.past_k:
+                    end_idx = df_idx + self.past_k
 
-    def _stack_groups(self, df_groups):
-        x_list = []
-        y_list = []
-        for i in range(self.m):
-            df_each = df_groups[i]
+                else:
+                    end_idx = df_idx + remain
 
-            x_each = np.zeros((self.max_nhorses , 78))
-            y_each = np.zeros((self.max_nhorses , 4))
-            ymask_each = np.ones(self.max_nhorses )
-            draw_vec = np.asarray(df_each['draw']).astype(int)
-            ymask_each[find_missing(draw_vec, self.max_nhorses)] = 0
-            x_each[draw_vec, :] = np.stack(df_each['features'])
-            y_each[draw_vec, 0:3] = np.asarray(df_each[target_cols])
-            y_each[:, 3] = ymask_each
-
-            x_list.append(x_each)
-            y_list.append(y_each)
-        x_np = np.stack(x_list)  # (m, nhorses, 78)
-        y_np = np.stack(y_list)  # (m, nhorses, 4)
-        y_odds, y_place, y_time, y_mask = y_np[:, :, 0], y_np[:, :, 1], y_np[:, :, 2], y_np[:, :, 3]
-        return x_np, (y_odds, y_place, y_time, y_mask)
+                oridf_idx = group_sorted.loc[df_idx, 'index']
+                records = np.array(list(group_sorted.loc[start_idx:end_idx, "features_complete"]))
+                df.loc[oridf_idx, 'past_records'][0:remain, ] = records
+        df.pop('features_complete')
+        return df
 
 
 def time2sec(time_obj):
     sec = (time_obj.hour * 60 + time_obj.minute) * 60 + time_obj.second + time_obj.microsecond * 1e-6
     return sec
+
 
 def calc_cul_winrates(key, raw_df):
     name_key = '%s_code' % key if key == 'horse' else '%s_name' % key
@@ -381,7 +415,7 @@ def calc_cul_time_diff(raw_df):
         horse_dates = horse_df["race_date"]
         horse_indexes = horse_dates.index
         mindate = min(horse_dates)
-        ages_series = (horse_dates.reset_index(drop=True) - mindate).apply(lambda x: x.days / 365.25)
+        ages_series = (horse_dates.reset_index(drop=True) - mindate).apply(lambda x: x.days)
         raw_df.loc[horse_indexes, 'age'] = list(ages_series)
 
         horse_df_sorted = horse_df.sort_values('race_date', ascending=False)
@@ -414,16 +448,6 @@ def calc_cul_time_diff(raw_df):
     return raw_df
 
 
-
-
-columns_order = [
-    'race_date', 'race_num', 'draw', 'location', 'going', 'course', 'track_length', 'horse_origin', 'age',
-    'act_weight', 'decla_weight', 'time_since_last', 'weight_diff', 'horse_cul_wintimes', 'horse_cul_racetimes',
-    'horse_cul_winrate', 'jockey_cul_wintimes', 'jockey_cul_racetimes', 'jockey_cul_winrate', 'trainer_cul_wintimes',
-    'trainer_cul_racetimes', 'trainer_cul_winrate', 'horse_rating', 'jockey_rating', 'trainer_rating',
-    'odds', 'place', 'time'
-]
-
 feature_cols = [
     'location', 'going', 'course', 'track_length', 'horse_origin', 'age',
     'act_weight', 'decla_weight', 'time_since_last', 'weight_diff', 'horse_cul_wintimes', 'horse_cul_racetimes',
@@ -442,7 +466,7 @@ linear_cols = ['age',
                ]
 
 target_cols = [
-    'odds', 'place', 'time'
+    'odds', 'place', 'time', 'horse_no'
 ]
 
-metainfo_cols = ['race_date', 'race_num', 'draw']
+metainfo_cols = ['race_date', 'race_num', 'draw', 'horse_code']

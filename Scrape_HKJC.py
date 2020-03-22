@@ -41,6 +41,7 @@ if __name__ == '__main__':
 
     crawler = HKJCCrawler(rawhtml_dir='data/intermediate_storage/stage1_raw_htmls',
                           raw_racedf_dir='data/intermediate_storage/stage2_single_race_dataframes',
+                          bet_table_dir='data/intermediate_storage/stage2_bet_tables',
                           html_records_path='data/intermediate_storage/html_records.pickle')
 
     invalid_list = []
@@ -69,10 +70,10 @@ if __name__ == '__main__':
                 fh.write(date + '\n')
             print('Invalid link')
 
-        except Exception:  # Unknown Error
-
-            msg = 'Unknown exception: %s' % selected_url
-            with open(log_path, 'a') as fh:
-                fh.write(msg + '\n')
-                traceback.print_exc(file=fh)
-                fh.write('\n')
+        # except Exception:  # Unknown Error
+        #
+        #     msg = 'Unknown exception: %s' % selected_url
+        #     with open(log_path, 'a') as fh:
+        #         fh.write(msg + '\n')
+        #         traceback.print_exc(file=fh)
+        #         fh.write('\n')

@@ -4,6 +4,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
+from lib.utils import write_pickle
 import pandas as pd
 import numpy as np
 import re
@@ -61,35 +62,108 @@ class SingleResultScrapper:
         self.race_location = race_location
         self.url_base = url_base
         self.html_recorder = html_recorder
+        self.bet_types = ["WIN", "PLACE", "QUINELLA", "QUINELLA PLACE"]
+        self.betkey_conversion_dict = {
+            'WIN': 'win',
+            'PLACE': 'place',
+            'QUINELLA': 'quinella',
+            'QUINELLA PLACE': 'quinella_place',
+        }
 
     def scrape_and_formDF(self, result_html, race_place):
 
         # Scrap
         race_num, track_length, going, course = scrape_race_meta(result_html)
+        bet_dict = self._scrape_bets(result_html)
         table_dict = self._scrape_results_table(result_html)
 
-        # Append
-        num_races = len(table_dict['place'])
-        table_dict['race_no'] = [race_place] * num_races
-        table_dict['race_num'] = [race_num] * num_races
-        table_dict['track_length'] = [track_length] * num_races
-        table_dict['going'] = [going] * num_races
-        table_dict['course'] = [course] * num_races
-        table_dict['race_date'] = [self.race_date] * num_races
-        table_dict['location'] = [self.race_location] * num_races
+        # Append race table
+        num_horses = len(table_dict['place'])
+        table_dict['race_no'] = [race_place] * num_horses
+        table_dict['race_num'] = [race_num] * num_horses
+        table_dict['track_length'] = [track_length] * num_horses
+        table_dict['going'] = [going] * num_horses
+        table_dict['course'] = [course] * num_horses
+        table_dict['race_date'] = [self.race_date] * num_horses
+        table_dict['location'] = [self.race_location] * num_horses
 
+        # Construct bet df
+        bet_single_df = pd.DataFrame({'race_date':self.race_date, 'race_num':race_num, 'bet_dict': bet_dict})
+        bet_single_df.index.name = 'bet_type'
+        bet_single_df = bet_single_df.reset_index()
         # Fill columns that are not found
         for key in table_dict.keys():
             if len(table_dict[key]) == 0:
-                table_dict[key] = [np.nan] * num_races
+                table_dict[key] = [np.nan] * num_horses
 
         # Convert to appropriate datatype
         df = pd.DataFrame(table_dict)
-        return df
+        return df, bet_single_df
 
     def _scrape_results_table(self, html):
         table_dict = scrape_results_table(self.url_base, html, self.html_recorder)
         return table_dict
+
+    def _scrape_bets(self, html):
+        soup = BeautifulSoup(html, 'html.parser')
+        dividend_table = soup.find('div', class_='dividend_tab').find('table', class_='table_bd')
+        if dividend_table is None:
+            return {self.betkey_conversion_dict[bet_type]:[] for bet_type in self.bet_types}
+        all_trs = dividend_table.find('tbody').find_all('tr')
+
+        bet_scrape_dict = dict()  # bet_type : (tr_idx, row_spane)
+        bet_output_dict = dict()  # bet_type : (horse_combination, odds)
+        row_skip = 1
+
+        # Record which tr has wanted bet information
+        for tr_idx, tr_each in enumerate(all_trs):
+            try:
+                # Assuming title must has row_space attribute
+                row_span = int(tr_each.find_all('td')[0]['rowspan'])
+            except KeyError:
+                continue
+
+            title_element = tr_each.find_all('td')[0]
+            bet_type = soup_string(title_element)
+            if bet_type in self.bet_types:
+                bet_scrape_dict[bet_type] = (tr_idx, row_span)
+            else:
+                continue
+
+        # Scraping the target tr
+        for bet_type in bet_scrape_dict.keys():
+            (tr_idx, row_span) = bet_scrape_dict[bet_type]
+            bet_output_dict[self.betkey_conversion_dict[bet_type]] = []
+            if row_span == 1:
+                all_tds = all_trs[tr_idx].find_all('td')
+                assert soup_string(all_tds[0]) == bet_type
+                output_dict_key = self.betkey_conversion_dict[bet_type]
+                horse_nos_tuple = tuple( float(x) for x in soup_string(all_tds[1]).split(','))
+                bet_odds = float(soup_string(all_tds[2]).replace(',', ''))
+                bet_output_dict[output_dict_key].append((horse_nos_tuple, bet_odds))
+
+            if row_span > 1:
+
+                for row_idx in range(row_span):
+                    progress_idx = tr_idx + row_idx
+                    if row_idx == 0:
+                        all_tds = all_trs[progress_idx].find_all('td')
+                        assert "".join(all_tds[0].strings).strip() == bet_type
+                        output_dict_key = self.betkey_conversion_dict[bet_type]
+                        horse_nos_tuple = tuple(float(x) for x in soup_string(all_tds[1]).split(','))
+                        bet_odds = float(soup_string(all_tds[2]).replace(',', ''))
+                        bet_output_dict[output_dict_key].append((horse_nos_tuple, bet_odds))
+                    else:
+                        all_tds = all_trs[progress_idx].find_all('td')
+                        output_dict_key = self.betkey_conversion_dict[bet_type]
+                        horse_nos_tuple = tuple(float(x) for x in soup_string(all_tds[0]).split(','))
+                        bet_odds = float(soup_string(all_tds[1]).replace(',', ''))
+                        bet_output_dict[output_dict_key].append((horse_nos_tuple, bet_odds))
+
+        return bet_output_dict
+
+
+
 
 
 class HKJCCrawler:
@@ -105,6 +179,7 @@ class HKJCCrawler:
 
     def __init__(self, rawhtml_dir='data/intermediate_storage/stage1_raw_htmls',
                  raw_racedf_dir='data/intermediate_storage/stage2_single_race_dataframes',
+                 bet_table_dir='data/intermediate_storage/stage2_bet_tables',
                  html_records_path='data/intermediate_storage/html_records.pickle'):
         """
 
@@ -121,6 +196,7 @@ class HKJCCrawler:
 
         self.rawhtml_dir = rawhtml_dir
         self.raw_racedf_dir = raw_racedf_dir
+        self.bet_table_dir = bet_table_dir
         self.html_recorder = HTMLRecorder(results_dir=rawhtml_dir, html_records_path=html_records_path)
 
     def scrape(self, url, skip_existed=True):
@@ -135,8 +211,9 @@ class HKJCCrawler:
         print('Main date: ', url)
         date = get_date_from_url(url)
         save_path = os.path.join(self.raw_racedf_dir, '%s.csv' % (date.replace('/', '-')))
+        save_bet_path = os.path.join(self.bet_table_dir, '%s_bet.pickle' % (date.replace('/', '-')))
         if skip_existed:
-            if os.path.isfile(save_path):
+            if os.path.isfile(save_path) and os.path.isfile(save_bet_path):
                 print('Date %s existed, skipped.' % (date))
                 return None
 
@@ -146,14 +223,18 @@ class HKJCCrawler:
         single_scrapper = SingleResultScrapper(race_date=date, race_location=location, html_recorder=self.html_recorder)
 
         df_list = []
+        bet_df_list = []
         for linkid, race_link in enumerate(all_races_links):
             print('Sub-race: ', race_link)
             results_html = get_html_by_both(self.html_recorder, race_link, selected_page='result', max_trial=10)
-            df = single_scrapper.scrape_and_formDF(results_html, linkid + 1)
+            df, bet_single_df = single_scrapper.scrape_and_formDF(results_html, linkid + 1)
             df_list.append(df)
+            bet_df_list.append(bet_single_df)
+
         df_all = pd.concat(df_list, axis=0)
         df_all.to_csv(save_path)
-
+        bet_df_all = pd.concat(bet_df_list, axis=0)
+        write_pickle(bet_df_all, save_bet_path)
 
 def get_specifichtml_by_request(url, selected_page='result'):
     """
@@ -247,7 +328,7 @@ def get_html_by_both(html_recorder, url, selected_page, _counter=0, max_trial=10
             _counter += 1
             time.sleep(_counter * 10)
             print('Retry#%d/%d: %s ' % (_counter, max_trial, url))
-            return get_html_by_both(html_recorder, url, selected_page=selected_page, _counter=counter)
+            return get_html_by_both(html_recorder, url, selected_page=selected_page, _counter=_counter)
     else:
         return html_text
 
@@ -417,3 +498,11 @@ def scrape_results_table(url_base, html, html_recorder):
                     except KeyError:
                         pass
     return data_dict
+
+
+
+def soup_string(element, strip=True):
+    if strip:
+        return "".join(element.strings).strip()
+    else:
+        return "".join(element.strings)

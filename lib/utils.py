@@ -1,6 +1,14 @@
 import datetime
 import numpy as np
+import pickle
 
+def write_pickle(df, pth):
+    with open(pth, 'wb') as fh:
+        pickle.dump(df, fh)
+
+def load_pickle(pth):
+    with open(pth, 'rb') as fh:
+        return pickle.load(fh)
 
 def generate_date_list(newday, oldday):
     diff = newday - oldday
